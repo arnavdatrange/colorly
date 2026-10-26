@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Color Picker</title>
+<script>
+  try {
+    var _t = localStorage.getItem("cp-theme");
+    document.documentElement.dataset.theme = _t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    if (localStorage.getItem("cp-motion") === "off") document.documentElement.dataset.motion = "off";
+  } catch (e) {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eceae6;
+    --panel: #fbfaf8;
+    --ink: #1d1d1f;
+    --muted: #6b6a66;
+    --line: #dcd9d3;
+    --accent: #2f5bea;
+    --card: #ffffff;
+    --on-ink: #ffffff;
+    --sky: #dfeaf2;
+    --edge: var(--edge);
+    --current: #5b8def;      /* updated by JS */
+    --on-current: #ffffff;   /* updated by JS */
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #101012;
+    --panel: #1a1a1d;
+    --card: #26262a;
+    --ink: #f2f0eb;
+    --muted: #a3a29c;
+    --line: #3a3a40;
+    --on-ink: #141416;
+    --sky: #1b2636;
+    --edge: rgba(255,255,255,.2);
+    --accent: #7fa4ff;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: "Bricolage Grotesque", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 72px 24px 24px;
+  }
+  .app {
+    width: min(960px, 100%);
+    background: var(--panel);
+    border-radius: 24px;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    box-shadow: 0 30px 60px -30px rgba(0,0,0,.25);
+  }
+
+  /* ---------- Swatch (the hero) ---------- */
+  .swatch {
+    background: var(--current);
+    color: var(--on-current);
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 460px;
+    position: relative; overflow: hidden; isolation: isolate;
+    background: var(--prev, var(--current));
+  }
+  .swatch::before {
+    content: ""; position: absolute; inset: 0; z-index: -1;
+    background: var(--current);
+    clip-path: circle(150% at var(--wx, 50%) var(--wy, 50%));
+  }
+  .swatch.washing::before { animation: wash .8s cubic-bezier(.2,.8,.2,1) both; }
+  .swatch h1 { font-size: 1rem; font-weight: 600; opacity: .85; }
+  .hex-big {
+    font-size: clamp(3rem, 9vw, 5.5rem);
+    font-weight: 800;
+    letter-spacing: -.03em;
+    line-height: 1;
+    cursor: pointer;
+    background: none; border: 0; color: inherit; font-family: inherit;
+    text-align: left; padding: 0;
+  }
+  .hex-big:focus-visible { outline: 3px solid currentColor; outline-offset: 6px; border-radius: 6px; }
+  .swatch .hint { font-size: .85rem; opacity: .8; margin-top: 10px; }
+  .contrast { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .chip {
+    font-size: .8rem; font-weight: 600;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1.5px solid currentColor;
+  }
+
+  /* ---------- Controls ---------- */
+  .controls { padding: 28px; display: flex; flex-direction: column; gap: 22px; }
+  .row-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: .9rem; font-weight: 600; margin-bottom: 8px;
+  }
+  .row-label output { font-family: "JetBrains Mono", monospace; font-size: .85rem; color: var(--muted); }
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 14px; border-radius: 999px; outline: none;
+    border: 1px solid var(--edge);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--card); border: 3px solid var(--ink);
+    cursor: grab; box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--card); border: 3px solid var(--ink); cursor: grab;
+  }
+  input[type=range]:focus-visible::-webkit-slider-thumb { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .tools { display: flex; gap: 10px; flex-wrap: wrap; }
+  button.btn {
+    font-family: inherit; font-size: .9rem; font-weight: 600;
+    padding: 10px 16px; border-radius: 12px; cursor: pointer;
+    border: 1.5px solid var(--line); background: var(--card); color: var(--ink);
+    transition: border-color .15s, transform .05s;
+  }
+  button.btn:hover { border-color: var(--ink); }
+  button.btn:active { transform: scale(.97); }
+  button.btn.primary { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+  button.btn:focus-visible, .shade:focus-visible, .saved:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .formats { display: grid; gap: 8px; }
+  .format {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+    background: var(--card); cursor: pointer; width: 100%; font-family: inherit;
+    text-align: left; transition: border-color .15s;
+  }
+  .format:hover { border-color: var(--ink); }
+  .format:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .format b { font-size: .8rem; color: var(--muted); font-weight: 600; width: 44px; }
+  .format code { font-family: "JetBrains Mono", monospace; font-size: .9rem; flex: 1; }
+  .format span { font-size: .75rem; color: var(--muted); }
+
+  /* ---------- Bottom strip ---------- */
+  .bottom {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+    padding: 22px 28px 26px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 28px;
+  }
+  .bottom h2 { font-size: .9rem; font-weight: 600; margin-bottom: 10px; }
+  .strip { display: flex; gap: 6px; flex-wrap: wrap; }
+  .shade, .saved {
+    width: 40px; height: 40px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--edge); padding: 0; position: relative;
+  }
+  .shade { flex: 1; min-width: 28px; }
+  .saved:hover::after {
+    content: "×"; position: absolute; inset: 0; display: grid; place-items: center;
+    background: rgba(0,0,0,.45); color: #fff; border-radius: 9px; font-size: 1.2rem;
+  }
+  .empty { font-size: .85rem; color: var(--muted); }
+
+  /* ---------- House color combos ---------- */
+  .houses {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+    padding: 22px 28px 28px;
+    display: grid; grid-template-columns: 300px 1fr; gap: 28px;
+  }
+  .houses h2 { font-size: .9rem; font-weight: 600; margin-bottom: 10px; }
+  .house-view { background: var(--card); border: 1.5px solid var(--line); border-radius: 16px; padding: 14px; }
+  .house-view svg { width: 100%; height: auto; display: block; border-radius: 10px; background: var(--sky); }
+  .house-name { font-weight: 800; font-size: 1.05rem; margin: 12px 0 8px; letter-spacing: -.01em; }
+  .parts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .parts.five { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .parts.five .part { padding: 5px 3px; }
+  .part {
+    border: 1.5px solid var(--line); border-radius: 10px; background: var(--card);
+    padding: 6px; cursor: pointer; font-family: inherit; text-align: center;
+  }
+  .part:hover { border-color: var(--ink); }
+  .part:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .part i { display: block; height: 28px; border-radius: 6px; border: 1px solid var(--edge); margin-bottom: 4px; }
+  .part small { font-size: .72rem; color: var(--muted); font-weight: 600; }
+  .copy-all { margin-top: 10px; width: 100%; }
+  .combo-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; align-content: start; }
+  .combo {
+    text-align: left; font-family: inherit; cursor: pointer; background: var(--card);
+    border: 1.5px solid var(--line); border-radius: 14px; padding: 10px;
+    transition: border-color .15s;
+  }
+  .combo:hover { border-color: var(--ink); }
+  .combo[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .combo:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .combo .dots { display: flex; height: 30px; border-radius: 8px; overflow: hidden; border: 1px solid var(--edge); }
+  .combo .dots span { flex: 1; }
+  .combo b { display: block; font-size: .9rem; margin-top: 8px; }
+  .combo small { color: var(--muted); font-size: .78rem; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translate(-50%, 20px); opacity: 0;
+    background: var(--ink); color: var(--on-ink); padding: 10px 18px; border-radius: 999px;
+    font-size: .9rem; font-weight: 600; pointer-events: none;
+    transition: opacity .2s, transform .2s;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- Settings ---------- */
+  .settings { position: fixed; top: 16px; right: 16px; z-index: 20; }
+  .gear {
+    width: 46px; height: 46px; border-radius: 50%; cursor: pointer;
+    display: grid; place-items: center; color: var(--ink);
+    background: var(--card); border: 1.5px solid var(--line);
+    box-shadow: 0 8px 20px -10px rgba(0,0,0,.4);
+  }
+  .gear:hover { border-color: var(--ink); }
+  .gear svg { transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
+  .gear[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .gear:focus-visible, .switch:focus-visible, .seg button:focus-visible, .field:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .panel {
+    position: absolute; top: 56px; right: 0; width: 270px;
+    background: var(--panel); border: 1.5px solid var(--line); border-radius: 18px;
+    padding: 16px; display: grid; gap: 12px;
+    box-shadow: 0 24px 50px -20px rgba(0,0,0,.5);
+    transform-origin: top right; animation: panelIn .22s cubic-bezier(.2,.9,.3,1.2);
+  }
+  .panel[hidden] { display: none; }
+  @keyframes panelIn { from { opacity: 0; transform: scale(.92) translateY(-6px); } }
+  .panel h2 { font-size: 1rem; }
+  .opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: .92rem; font-weight: 600; }
+  .opt small { display: block; font-weight: 400; color: var(--muted); font-size: .78rem; }
+  .switch {
+    flex: none; width: 46px; height: 26px; border-radius: 999px; cursor: pointer; position: relative;
+    border: 0; background: var(--line); transition: background .2s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    transition: transform .22s cubic-bezier(.3,1.4,.5,1);
+  }
+  .switch[aria-checked="true"] { background: var(--accent); }
+  .switch[aria-checked="true"]::after { transform: translateX(20px); }
+  .panel .btn { width: 100%; }
+
+  /* ---------- Custom preset builder ---------- */
+  .seg { display: inline-flex; padding: 4px; gap: 4px; background: var(--bg); border-radius: 14px; margin-bottom: 14px; }
+  .seg button {
+    font: inherit; font-size: .88rem; font-weight: 600; padding: 8px 14px; border: 0;
+    border-radius: 10px; cursor: pointer; background: transparent; color: var(--muted);
+    transition: background .2s, color .2s;
+  }
+  .seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 2px 8px -3px rgba(0,0,0,.35); }
+  .field-label { display: block; font-size: .9rem; font-weight: 600; margin-bottom: 6px; }
+  .field {
+    width: 100%; font: inherit; padding: 10px 14px; border-radius: 12px;
+    border: 1.5px solid var(--line); background: var(--card); color: var(--ink); margin-bottom: 14px;
+  }
+  .slots { display: grid; gap: 8px; margin-bottom: 14px; }
+  .slot {
+    display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center;
+    padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--card);
+  }
+  .slot input[type=color] {
+    width: 44px; height: 44px; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 10px;
+  }
+  .slot input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  .slot input[type=color]::-webkit-color-swatch { border: 1px solid var(--edge); border-radius: 10px; }
+  .slot input[type=color]::-moz-color-swatch { border: 1px solid var(--edge); border-radius: 10px; }
+  .slot-info b { display: block; font-size: .9rem; }
+  .slot-info code { font-family: "JetBrains Mono", monospace; font-size: .8rem; color: var(--muted); }
+  button.btn.small { padding: 8px 12px; font-size: .8rem; }
+  .builder .tools { margin-bottom: 10px; }
+
+  /* ---------- Dark mode touches ---------- */
+  :root[data-theme="dark"] .ground { fill: #3a4533; }
+  :root[data-theme="dark"] body::before { opacity: .2; }
+  :root[data-theme="dark"] .app { box-shadow: 0 30px 60px -30px rgba(0,0,0,.8); }
+  :root[data-motion="off"] *, :root[data-motion="off"] *::before { transition: none !important; animation: none !important; }
+  :root[data-motion="off"] .rv { opacity: 1 !important; }
+
+  /* ---------- Animations ---------- */
+  body::before {
+    content: ""; position: fixed; inset: -25%; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(circle at 18% 22%, var(--current), transparent 42%),
+      radial-gradient(circle at 82% 78%, var(--current), transparent 38%);
+    opacity: .32; filter: blur(60px);
+    animation: ambient 16s ease-in-out infinite alternate;
+  }
+  @keyframes ambient { to { transform: translate(4%, -3%) scale(1.12) rotate(6deg); } }
+
+  .app { animation: appIn .9s cubic-bezier(.2,.8,.2,1) backwards; }
+  @keyframes appIn { from { opacity: 0; transform: translateY(32px) scale(.98); } }
+
+  @keyframes wash {
+    from { clip-path: circle(0% at var(--wx, 50%) var(--wy, 50%)); }
+    to   { clip-path: circle(150% at var(--wx, 50%) var(--wy, 50%)); }
+  }
+
+  .hex-big { perspective: 600px; }
+  .hex-big span {
+    display: inline-block;
+    animation: roll .55s cubic-bezier(.2,.9,.3,1.25) backwards;
+    animation-delay: calc(var(--i) * 45ms);
+  }
+  @keyframes roll { from { opacity: 0; transform: translateY(55%) rotateX(-75deg); } }
+
+  input[type=range]::-webkit-slider-thumb { transition: transform .15s; }
+  input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.12); }
+  input[type=range]:active::-webkit-slider-thumb { transform: scale(1.3); cursor: grabbing; }
+
+  .shade, .saved, .part { transition: transform .18s cubic-bezier(.3,1.4,.5,1), border-color .15s; }
+  .shade:hover { transform: translateY(-5px) scale(1.1); }
+  .saved:hover { transform: scale(1.12) rotate(-4deg); }
+  .part:hover { transform: translateY(-3px); }
+
+  .combo { transition: transform .2s cubic-bezier(.3,1.4,.5,1), box-shadow .2s, border-color .15s; }
+  .combo:hover { transform: translateY(-4px); box-shadow: 0 14px 24px -14px rgba(0,0,0,.35); }
+  .combo .dots span { transition: flex .3s ease; }
+  .combo .dots span:hover { flex: 2.4; }
+
+  .rv { opacity: 0; }
+  .rv.in { opacity: 1; animation: rise .7s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: var(--d, 0ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px); } }
+
+  .house-view svg * { transition: fill .6s ease; }
+  .house-view svg.pop { animation: pop .55s cubic-bezier(.3,1.4,.5,1); }
+  @keyframes pop { 0% { transform: scale(.95); } 100% { transform: scale(1); } }
+
+  .cloud { animation: drift 42s linear infinite; }
+  .cloud.c2 { animation-duration: 58s; animation-delay: -28s; }
+  @keyframes drift { from { transform: translateX(-100px); } to { transform: translateX(310px); } }
+
+  .smoke circle {
+    transform-box: fill-box; transform-origin: center; opacity: 0;
+    animation: puff 3.6s ease-out infinite;
+  }
+  .smoke circle:nth-child(2) { animation-delay: 1.2s; }
+  .smoke circle:nth-child(3) { animation-delay: 2.4s; }
+  @keyframes puff {
+    0%   { opacity: 0;  transform: translate(0, 0) scale(.6); }
+    20%  { opacity: .8; }
+    100% { opacity: 0;  transform: translate(16px, -24px) scale(2.4); }
+  }
+
+  .panes rect { animation: lit 5s ease-in-out infinite; }
+  .panes rect:nth-child(2) { animation-delay: -2.5s; }
+  @keyframes lit { 0%, 100% { fill: #cfe3f1; } 50% { fill: #ffe7a8; } }
+
+  .lampglow { transform-box: fill-box; transform-origin: center; animation: glow 3.4s ease-in-out infinite; }
+  @keyframes glow { 0%, 100% { opacity: .15; transform: scale(.85); } 50% { opacity: .42; transform: scale(1.1); } }
+
+  .sway { transform-box: fill-box; transform-origin: top center; animation: sway 5s ease-in-out infinite alternate; }
+  @keyframes sway { from { transform: skewX(-1.6deg); } to { transform: skewX(1.6deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before { transition: none !important; animation: none !important; }
+    .rv { opacity: 1 !important; }
+  }
+
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    .swatch { min-height: 260px; }
+    .bottom { grid-template-columns: 1fr; }
+    .houses { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="settings">
+  <button class="gear" id="gear" aria-label="Settings" aria-expanded="false" aria-controls="panel">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2.2"/><circle cx="9" cy="12" r="2.2"/><circle cx="17" cy="18" r="2.2"/>
+    </svg>
+  </button>
+  <div class="panel" id="panel" hidden>
+    <h2>Settings</h2>
+    <div class="opt"><span id="darkLbl">Dark mode<small>Easier on the eyes at night</small></span>
+      <button class="switch" id="swDark" role="switch" aria-checked="false" aria-labelledby="darkLbl"></button></div>
+    <div class="opt"><span id="motionLbl">Animations<small>Turn off for a calmer page</small></span>
+      <button class="switch" id="swMotion" role="switch" aria-checked="true" aria-labelledby="motionLbl"></button></div>
+    <button class="btn" id="clearSaved">Clear saved colors</button>
+    <button class="btn" id="clearCustom">Delete all custom presets</button>
+  </div>
+</div>
+
+<main class="app">
+  <section class="swatch">
+    <h1>Color Picker</h1>
+    <div>
+      <button class="hex-big" id="hexBig" aria-label="Copy HEX code">#5B8DEF</button>
+      <p class="hint">Click the code to copy it</p>
+      <div class="contrast" id="contrast"></div>
+    </div>
+  </section>
+
+  <section class="controls">
+    <div>
+      <div class="row-label"><label for="hue">Hue</label><output id="hueOut"></output></div>
+      <input type="range" id="hue" min="0" max="360">
+    </div>
+    <div>
+      <div class="row-label"><label for="sat">Saturation</label><output id="satOut"></output></div>
+      <input type="range" id="sat" min="0" max="100">
+    </div>
+    <div>
+      <div class="row-label"><label for="lig">Lightness</label><output id="ligOut"></output></div>
+      <input type="range" id="lig" min="0" max="100">
+    </div>
+
+    <div class="tools">
+      <button class="btn primary" id="random">Random color</button>
+      <button class="btn" id="save">Save color</button>
+      <button class="btn" id="eyedrop" hidden>Pick from screen</button>
+    </div>
+
+    <div class="formats">
+      <button class="format" data-copy="hex"><b>HEX</b><code id="fHex"></code><span>Copy</span></button>
+      <button class="format" data-copy="rgb"><b>RGB</b><code id="fRgb"></code><span>Copy</span></button>
+      <button class="format" data-copy="hsl"><b>HSL</b><code id="fHsl"></code><span>Copy</span></button>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div>
+      <h2>Shades of this color</h2>
+      <div class="strip" id="shades"></div>
+    </div>
+    <div>
+      <h2>Saved colors</h2>
+      <div class="strip" id="saved"></div>
+    </div>
+  </section>
+
+  <section class="houses" aria-label="House color combinations">
+    <div>
+      <h2>House preview</h2>
+      <div class="house-view">
+        <svg id="houseSvg" viewBox="0 0 240 160" role="img" aria-label="House with the selected colors">
+          <g class="cloud c1" fill="#fff" opacity=".9"><ellipse cx="40" cy="22" rx="16" ry="6"/><ellipse cx="52" cy="18" rx="10" ry="6"/></g>
+          <g class="cloud c2" fill="#fff" opacity=".8"><ellipse cx="150" cy="40" rx="14" ry="5"/><ellipse cx="160" cy="36" rx="9" ry="5"/></g>
+          <rect class="ground" y="136" width="240" height="24" fill="#a9b79a"/>
+          <rect id="hvWall" x="40" y="68" width="160" height="68"/>
+          <rect id="hvTrimBase" x="36" y="132" width="168" height="6"/>
+          <polygon id="hvRoof" points="28,70 120,18 212,70"/>
+          <polygon id="hvGable" points="104,70 120,60 136,70" />
+          <rect id="hvChimney" x="160" y="26" width="14" height="30"/>
+          <g class="smoke" fill="#fff"><circle cx="167" cy="22" r="3"/><circle cx="167" cy="22" r="3"/><circle cx="167" cy="22" r="3"/></g>
+          <rect id="hvDoor" x="105" y="92" width="30" height="44" rx="2"/>
+          <circle cx="130" cy="116" r="1.8" fill="#ffd36b"/>
+          <g id="hvWin">
+            <rect x="55" y="88" width="32" height="26" rx="2"/>
+            <rect x="153" y="88" width="32" height="26" rx="2"/>
+          </g>
+          <g class="panes" fill="#cfe3f1" stroke="none">
+            <rect x="59" y="92" width="24" height="18"/>
+            <rect x="157" y="92" width="24" height="18"/>
+          </g>
+        </svg>
+        <p class="house-name" id="houseName"></p>
+        <div class="parts" id="parts"></div>
+        <button class="btn copy-all" id="copyAll">Copy all codes</button>
+        <button class="btn copy-all" id="delHouse" hidden>Delete this custom preset</button>
+      </div>
+    </div>
+    <div>
+      <h2>House color combos</h2>
+      <div class="combo-list" id="combos"></div>
+    </div>
+  </section>
+
+  <section class="houses" aria-label="Premium interior color combinations">
+    <div>
+      <h2>Room preview</h2>
+      <div class="house-view">
+        <svg id="roomSvg" viewBox="0 0 240 160" role="img" aria-label="Living room with the selected colors">
+          <rect id="rmWall" width="240" height="160"/>
+          <rect id="rmCeiling" width="240" height="16"/>
+          <rect id="rmAccent" x="62" y="16" width="130" height="112"/>
+          <rect id="rmFloor" y="128" width="240" height="32"/>
+          <rect id="rmCurtain" class="sway" x="10" y="16" width="30" height="112" opacity=".9"/>
+          <rect x="44" y="30" width="8" height="98" fill="#000" opacity=".06"/>
+          <rect id="rmSofa" x="78" y="92" width="100" height="38" rx="6"/>
+          <rect id="rmSofaBack" x="82" y="72" width="92" height="28" rx="6"/>
+          <rect id="rmSofaBase" x="74" y="100" width="108" height="14" rx="5"/>
+          <rect x="84" y="126" width="6" height="6" fill="#000" opacity=".35"/>
+          <rect x="166" y="126" width="6" height="6" fill="#000" opacity=".35"/>
+          <rect x="204" y="64" width="2" height="64" fill="#2b2b2d"/>
+          <circle class="lampglow" cx="205" cy="56" r="28" fill="#ffe7a8"/>
+          <path d="M196 64 h18 l-4 -16 h-10 z" fill="#f3d9a4"/>
+          <circle cx="205" cy="128" r="7" fill="#2b2b2d"/>
+        </svg>
+        <p class="house-name" id="roomName"></p>
+        <div class="parts five" id="roomParts"></div>
+        <button class="btn copy-all" id="roomCopyAll">Copy all codes</button>
+        <button class="btn copy-all" id="delRoom" hidden>Delete this custom preset</button>
+      </div>
+    </div>
+    <div>
+      <h2>Premium interior combos</h2>
+      <div class="combo-list" id="roomCombos"></div>
+    </div>
+  </section>
+
+  <section class="houses builder" aria-label="Make a custom preset">
+    <div>
+      <h2>Your preset preview</h2>
+      <div class="house-view"><div id="cuPreview"></div></div>
+    </div>
+    <div>
+      <h2>Make your own preset</h2>
+      <div class="seg" role="group" aria-label="Preset type">
+        <button id="segHouse" aria-pressed="true">House outside</button>
+        <button id="segRoom" aria-pressed="false">Room inside</button>
+      </div>
+      <label class="field-label" for="cuName">Preset name</label>
+      <input class="field" id="cuName" maxlength="40" placeholder="e.g. My dream home" autocomplete="off">
+      <div class="slots" id="cuSlots"></div>
+      <div class="tools">
+        <button class="btn primary" id="cuSave">Save preset</button>
+        <button class="btn" id="cuReset">Start from current combo</button>
+      </div>
+      <p class="empty">Tip: pick a color at the top, then press “Use picker color” on any part. Saved presets stay on this device.</p>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  // ---------- State ----------
+  let h = 220, s = 80, l = 65;
+  let washNext = false, lastHex = "";
+  let savedColors = [];
+  try { savedColors = JSON.parse(localStorage.getItem("saved-colors") || "[]"); } catch (e) {}
+
+  const $ = id => document.getElementById(id);
+
+  // ---------- Color math ----------
+  function hslToRgb(h, s, l) {
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+  }
+  const toHex = ([r, g, b]) =>
+    "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("").toUpperCase();
+
+  function hexToHsl(hex) {
+    let r = parseInt(hex.slice(1, 3), 16) / 255,
+        g = parseInt(hex.slice(3, 5), 16) / 255,
+        b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let hh = 0, ss = 0, ll = (max + min) / 2;
+    if (d) {
+      ss = d / (1 - Math.abs(2 * ll - 1));
+      if (max === r) hh = ((g - b) / d) % 6;
+      else if (max === g) hh = (b - r) / d + 2;
+      else hh = (r - g) / d + 4;
+      hh *= 60; if (hh < 0) hh += 360;
+    }
+    return [Math.round(hh), Math.round(ss * 100), Math.round(ll * 100)];
+  }
+
+  function luminance([r, g, b]) {
+    const c = [r, g, b].map(v => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  const contrastRatio = (l1, l2) => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+
+  // ---------- Render ----------
+  function render() {
+    const rgb = hslToRgb(h, s, l);
+    const hex = toHex(rgb);
+    const lum = luminance(rgb);
+    const white = contrastRatio(lum, 1), black = contrastRatio(lum, 0);
+    const onColor = black >= white ? "#111111" : "#ffffff";
+
+    const root = document.documentElement.style;
+    root.setProperty("--current", hex);
+    root.setProperty("--on-current", onColor);
+
+    const sw = document.querySelector(".swatch");
+    if (washNext && lastHex && hex !== lastHex) {
+      sw.style.setProperty("--prev", lastHex);
+      sw.style.setProperty("--wx", (15 + Math.random() * 70) + "%");
+      sw.style.setProperty("--wy", (15 + Math.random() * 70) + "%");
+      sw.classList.remove("washing"); void sw.offsetWidth; sw.classList.add("washing");
+      $("hexBig").innerHTML = hex.split("").map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join("");
+    } else {
+      sw.classList.remove("washing");
+      sw.style.setProperty("--prev", hex);
+      $("hexBig").textContent = hex;
+    }
+    washNext = false; lastHex = hex;
+    $("fHex").textContent = hex;
+    $("fRgb").textContent = `rgb(${rgb.join(", ")})`;
+    $("fHsl").textContent = `hsl(${h}, ${s}%, ${l}%)`;
+
+    $("hue").value = h; $("sat").value = s; $("lig").value = l;
+    $("hueOut").textContent = h + "°";
+    $("satOut").textContent = s + "%";
+    $("ligOut").textContent = l + "%";
+
+    // slider tracks show what dragging will do
+    $("hue").style.background =
+      "linear-gradient(to right," + [0,60,120,180,240,300,360].map(x => `hsl(${x},${s}%,${l}%)`).join(",") + ")";
+    $("sat").style.background = `linear-gradient(to right, hsl(${h},0%,${l}%), hsl(${h},100%,${l}%))`;
+    $("lig").style.background = `linear-gradient(to right, #000, hsl(${h},${s}%,50%), #fff)`;
+
+    // readability chips
+    const grade = r => r >= 7 ? "AAA" : r >= 4.5 ? "AA" : r >= 3 ? "Large text only" : "Low contrast";
+    const best = Math.max(white, black);
+    $("contrast").innerHTML =
+      `<span class="chip">${best === white ? "White" : "Black"} text: ${best.toFixed(1)}:1</span>` +
+      `<span class="chip">${grade(best)}</span>`;
+
+    // shades (same hue + saturation, different lightness)
+    $("shades").innerHTML = "";
+    [95, 85, 75, 65, 55, 45, 35, 25, 15].forEach(light => {
+      const b = document.createElement("button");
+      const c = toHex(hslToRgb(h, s, light));
+      b.className = "shade"; b.style.background = c;
+      b.title = c; b.setAttribute("aria-label", "Use " + c);
+      b.onclick = () => { l = light; washNext = true; render(); };
+      $("shades").appendChild(b);
+    });
+
+    // saved colors
+    $("saved").innerHTML = "";
+    if (!savedColors.length) {
+      $("saved").innerHTML = '<p class="empty">Nothing saved yet. Press “Save color”.</p>';
+    }
+    savedColors.forEach((c, i) => {
+      const b = document.createElement("button");
+      b.className = "saved"; b.style.background = c;
+      b.title = c + " (click to use, hold Shift + click to remove)";
+      b.setAttribute("aria-label", "Use saved color " + c);
+      b.onclick = e => {
+        if (e.shiftKey) { savedColors.splice(i, 1); persist(); render(); return; }
+        [h, s, l] = hexToHsl(c); washNext = true; render();
+      };
+      b.oncontextmenu = e => { e.preventDefault(); savedColors.splice(i, 1); persist(); render(); };
+      $("saved").appendChild(b);
+    });
+  }
+
+  function persist() {
+    try { localStorage.setItem("saved-colors", JSON.stringify(savedColors)); } catch (e) {}
+  }
+
+  // ---------- Actions ----------
+  let toastTimer;
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 1600);
+  }
+
+  async function copy(text, label) {
+    try { await navigator.clipboard.writeText(text); toast(label || "Copied " + text); }
+    catch (e) { toast("Copy failed. Select the text and copy it manually."); }
+  }
+
+  ["hue", "sat", "lig"].forEach(id =>
+    $(id).addEventListener("input", e => {
+      const v = +e.target.value;
+      if (id === "hue") h = v; else if (id === "sat") s = v; else l = v;
+      render();
+    })
+  );
+
+  $("hexBig").onclick = () => copy($("fHex").textContent);
+  document.querySelectorAll(".format").forEach(btn =>
+    btn.onclick = () => copy(btn.querySelector("code").textContent)
+  );
+
+  $("random").onclick = () => {
+    h = Math.floor(Math.random() * 361);
+    s = 40 + Math.floor(Math.random() * 60);
+    l = 30 + Math.floor(Math.random() * 45);
+    washNext = true;
+    render();
+  };
+
+  $("save").onclick = () => {
+    const hex = toHex(hslToRgb(h, s, l));
+    if (savedColors.includes(hex)) return toast("Already saved");
+    savedColors.unshift(hex);
+    savedColors = savedColors.slice(0, 12);
+    persist(); render(); toast("Saved " + hex);
+  };
+
+  // Eyedropper works in Chrome / Edge only
+  if ("EyeDropper" in window) {
+    $("eyedrop").hidden = false;
+    $("eyedrop").onclick = async () => {
+      try {
+        const { sRGBHex } = await new EyeDropper().open();
+        [h, s, l] = hexToHsl(sRGBHex.toUpperCase()); washNext = true; render();
+      } catch (e) { /* user cancelled */ }
+    };
+  }
+
+  // Space bar = random color (when not focused on a control)
+  document.addEventListener("keydown", e => {
+    if (e.code === "Space" && document.activeElement === document.body) {
+      e.preventDefault(); $("random").click();
+    }
+  });
+
+  // ---------- House color combos ----------
+  const HOUSE_COMBOS = [
+    { name: "Classic White & Navy", note: "Clean and timeless",  wall: "#F5F3EE", trim: "#FFFFFF", roof: "#2F3E55", door: "#1F3A5F" },
+    { name: "Warm Beige & Brown",   note: "Cozy and earthy",      wall: "#E8D8BE", trim: "#FAF6EE", roof: "#5A3E2B", door: "#7A4A2A" },
+    { name: "Sage Green & Cream",   note: "Calm and natural",     wall: "#B7C4A8", trim: "#F7F4EA", roof: "#4A5A48", door: "#8C5A3C" },
+    { name: "Sky Blue & White",     note: "Fresh and bright",     wall: "#BFD8EA", trim: "#FFFFFF", roof: "#5B6B7A", door: "#E4B94A" },
+    { name: "Terracotta & Cream",   note: "Warm Indian style",    wall: "#D98A6C", trim: "#FBEFE0", roof: "#7A3B2E", door: "#3E5C4A" },
+    { name: "Modern Grey & Black",  note: "Sharp and modern",     wall: "#D2D4D6", trim: "#F2F2F2", roof: "#2B2B2D", door: "#1E1E20" },
+    { name: "Mustard & Teal",       note: "Bold and cheerful",    wall: "#F0CB6A", trim: "#FFF8E1", roof: "#8A5A33", door: "#2E7D7A" },
+    { name: "Peach & Mint",         note: "Soft and friendly",    wall: "#F6C9B0", trim: "#FFF6EE", roof: "#6E8F86", door: "#4F8A7B" },
+    { name: "Rose & Maroon",        note: "Rich and elegant",     wall: "#F2C6CF", trim: "#FFFFFF", roof: "#7B2D3B", door: "#7B2D3B" },
+    { name: "Olive & Ivory",        note: "Quiet and earthy",     wall: "#C9C28F", trim: "#FBF9EF", roof: "#55583A", door: "#6B4A32" }
+  ];
+  const PART_LABELS = { wall: "Wall", trim: "Trim", roof: "Roof", door: "Door" };
+  let activeCombo = 0;
+
+  function paintHouse() {
+    const c = HOUSE_COMBOS[activeCombo];
+    $("hvWall").style.fill = c.wall;
+    $("hvTrimBase").style.fill = c.trim;
+    $("hvGable").style.fill = c.trim;
+    $("hvRoof").style.fill = c.roof;
+    $("hvChimney").style.fill = c.roof;
+    $("hvDoor").style.fill = c.door;
+    $("hvWin").style.fill = c.trim;
+    $("houseName").textContent = c.name;
+    $("delHouse").hidden = !c.custom;
+
+    $("parts").innerHTML = "";
+    Object.keys(PART_LABELS).forEach(key => {
+      const b = document.createElement("button");
+      b.className = "part";
+      b.title = c[key] + " (click to edit in the picker)";
+      b.setAttribute("aria-label", PART_LABELS[key] + " " + c[key] + ", edit in picker");
+      b.innerHTML = `<i style="background:${c[key]}"></i><small>${PART_LABELS[key]}</small>`;
+      b.onclick = () => {
+        [h, s, l] = hexToHsl(c[key]); washNext = true; render();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        toast(PART_LABELS[key] + " color loaded");
+      };
+      $("parts").appendChild(b);
+    });
+
+    document.querySelectorAll("#combos .combo").forEach((el, i) =>
+      el.setAttribute("aria-pressed", i === activeCombo)
+    );
+  }
+
+  function buildList(listId, combos, keys, setActive, paint, svgId) {
+    const list = $(listId);
+    list.innerHTML = "";
+    combos.forEach((c, i) => {
+      const b = document.createElement("button");
+      b.className = "combo";
+      b.innerHTML = `<div class="dots">${keys.map(k => `<span style="background:${c[k]}"></span>`).join("")}</div>`;
+      const nm = document.createElement("b"); nm.textContent = c.name;
+      const sm = document.createElement("small"); sm.textContent = c.custom ? "★ Custom preset" : c.note;
+      b.append(nm, sm);
+      b.onclick = () => { setActive(i); paint(); popSvg($(svgId)); };
+      list.appendChild(b);
+    });
+  }
+  const buildHouseList = () => buildList("combos", HOUSE_COMBOS, ["wall","trim","roof","door"], i => { activeCombo = i; }, paintHouse, "houseSvg");
+  const buildRoomList = () => buildList("roomCombos", ROOM_COMBOS, ["wall","accent","ceiling","floor","sofa"], i => { activeRoom = i; }, paintRoom, "roomSvg");
+
+  $("copyAll").onclick = () => {
+    const c = HOUSE_COMBOS[activeCombo];
+    copy(`${c.name}\nWall: ${c.wall}\nTrim: ${c.trim}\nRoof: ${c.roof}\nDoor: ${c.door}`, "Copied all 4 codes");
+  };
+
+  // ---------- Premium interior combos ----------
+  const ROOM_COMBOS = [
+    { name: "Greige & Gold",        note: "Soft luxury",          wall: "#D9D2C7", accent: "#B9A88C", ceiling: "#F6F3EE", floor: "#8A6E52", sofa: "#3B3B3D" },
+    { name: "Midnight Navy & Brass",note: "Rich and royal",       wall: "#E6E2DA", accent: "#1F2A44", ceiling: "#F8F6F1", floor: "#6B4F3A", sofa: "#B08D57" },
+    { name: "Emerald & Ivory",      note: "Deep and elegant",     wall: "#F3EFE6", accent: "#1F5A4A", ceiling: "#FFFFFF", floor: "#5A4636", sofa: "#C8A96A" },
+    { name: "Charcoal & Walnut",    note: "Modern and moody",     wall: "#CFCFCC", accent: "#3A3A3C", ceiling: "#F2F2F0", floor: "#5B4030", sofa: "#8A7A68" },
+    { name: "Blush & Champagne",    note: "Warm and gentle",      wall: "#F3E2DD", accent: "#D8B4A6", ceiling: "#FFF9F5", floor: "#B79F86", sofa: "#8E6F6A" },
+    { name: "Olive & Cognac",       note: "Earthy and classy",    wall: "#E5E1D0", accent: "#6B6E45", ceiling: "#FAF8F0", floor: "#7A5A3E", sofa: "#9C5A32" },
+    { name: "Ivory & Taupe",        note: "Calm and minimal",     wall: "#F5F1EA", accent: "#B8A99A", ceiling: "#FFFFFF", floor: "#A89886", sofa: "#6F625A" },
+    { name: "Terracotta & Sand",    note: "Warm and handcrafted", wall: "#EADBC8", accent: "#B8613F", ceiling: "#FBF6EE", floor: "#8B6B4F", sofa: "#4C5B52" },
+    { name: "Deep Teal & Copper",   note: "Bold and refined",     wall: "#E3E8E6", accent: "#1E4D52", ceiling: "#F7F9F8", floor: "#6A5342", sofa: "#B87333" },
+    { name: "Burgundy & Cream",     note: "Classic and cozy",     wall: "#F2EADB", accent: "#6E2231", ceiling: "#FFFBF2", floor: "#4E3828", sofa: "#C9B38A" }
+  ];
+  const ROOM_LABELS = { wall: "Wall", accent: "Accent", ceiling: "Ceiling", floor: "Floor", sofa: "Sofa" };
+  let activeRoom = 0;
+
+  function paintRoom() {
+    const c = ROOM_COMBOS[activeRoom];
+    $("rmWall").style.fill = c.wall;
+    $("rmAccent").style.fill = c.accent;
+    $("rmCeiling").style.fill = c.ceiling;
+    $("rmFloor").style.fill = c.floor;
+    $("rmCurtain").style.fill = c.accent;
+    $("rmSofa").style.fill = c.sofa;
+    $("rmSofaBack").style.fill = c.sofa;
+    $("rmSofaBase").style.fill = c.sofa;
+    $("roomName").textContent = c.name;
+    $("delRoom").hidden = !c.custom;
+
+    $("roomParts").innerHTML = "";
+    Object.keys(ROOM_LABELS).forEach(key => {
+      const b = document.createElement("button");
+      b.className = "part";
+      b.title = c[key] + " (click to edit in the picker)";
+      b.setAttribute("aria-label", ROOM_LABELS[key] + " " + c[key] + ", edit in picker");
+      b.innerHTML = `<i style="background:${c[key]}"></i><small>${ROOM_LABELS[key]}</small>`;
+      b.onclick = () => {
+        [h, s, l] = hexToHsl(c[key]); washNext = true; render();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        toast(ROOM_LABELS[key] + " color loaded");
+      };
+      $("roomParts").appendChild(b);
+    });
+
+    document.querySelectorAll("#roomCombos .combo").forEach((el, i) =>
+      el.setAttribute("aria-pressed", i === activeRoom)
+    );
+  }
+
+
+  $("roomCopyAll").onclick = () => {
+    const c = ROOM_COMBOS[activeRoom];
+    copy(`${c.name}\nWall: ${c.wall}\nAccent wall: ${c.accent}\nCeiling: ${c.ceiling}\nFloor: ${c.floor}\nSofa: ${c.sofa}`, "Copied all 5 codes");
+  };
+
+  function popSvg(el) {
+    el.classList.remove("pop"); void el.getBoundingClientRect(); el.classList.add("pop");
+  }
+
+  // clear the wash helper layer once the animation ends
+  document.querySelector(".swatch").addEventListener("animationend", e => {
+    if (e.animationName === "wash") e.currentTarget.style.setProperty("--prev", lastHex);
+  });
+
+  // ---------- Custom presets ----------
+  const CUSTOM_KEY = "custom-combos";
+  let customCombos = { house: [], room: [] };
+  try {
+    const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY) || "{}");
+    customCombos.house = Array.isArray(raw.house) ? raw.house : [];
+    customCombos.room = Array.isArray(raw.room) ? raw.room : [];
+  } catch (e) {}
+  const isHex = v => typeof v === "string" && /^#[0-9A-Fa-f]{6}$/.test(v);
+  const validCustom = (c, keys) => c && typeof c.name === "string" && keys.every(k => isHex(c[k]));
+  customCombos.house = customCombos.house.filter(c => validCustom(c, ["wall","trim","roof","door"]));
+  customCombos.room = customCombos.room.filter(c => validCustom(c, ["wall","accent","ceiling","floor","sofa"]));
+  customCombos.house.forEach(c => HOUSE_COMBOS.push({ ...c, custom: true }));
+  customCombos.room.forEach(c => ROOM_COMBOS.push({ ...c, custom: true }));
+  const persistCustom = () => { try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(customCombos)); } catch (e) {} };
+
+  const BUILD = {
+    house: {
+      keys: ["wall","trim","roof","door"], labels: PART_LABELS, list: HOUSE_COMBOS, svg: "houseSvg",
+      map: { hvWall: "wall", hvTrimBase: "trim", hvGable: "trim", hvRoof: "roof", hvChimney: "roof", hvDoor: "door", hvWin: "trim" }
+    },
+    room: {
+      keys: ["wall","accent","ceiling","floor","sofa"], labels: ROOM_LABELS, list: ROOM_COMBOS, svg: "roomSvg",
+      map: { rmWall: "wall", rmAccent: "accent", rmCeiling: "ceiling", rmFloor: "floor", rmCurtain: "accent", rmSofa: "sofa", rmSofaBack: "sofa", rmSofaBase: "sofa" }
+    }
+  };
+  let buildType = "house", draft = {};
+
+  function applyScene(svg, map, c) {
+    Object.keys(map).forEach(id => {
+      const el = svg.querySelector(`#${id}, [data-p="${id}"]`);
+      if (el) el.style.fill = c[map[id]];
+    });
+  }
+  function makePreviewSvg() {
+    const clone = $(BUILD[buildType].svg).cloneNode(true);
+    clone.removeAttribute("id"); clone.classList.remove("pop");
+    clone.querySelectorAll("[id]").forEach(el => { el.dataset.p = el.id; el.removeAttribute("id"); });
+    clone.setAttribute("aria-label", "Preview of your preset");
+    return clone;
+  }
+  function startDraft() {
+    const cfg = BUILD[buildType];
+    const base = cfg.list[buildType === "house" ? activeCombo : activeRoom] || cfg.list[0];
+    draft = {};
+    cfg.keys.forEach(k => draft[k] = base[k].toUpperCase());
+  }
+  function updatePreview() {
+    applyScene($("cuPreview").firstElementChild, BUILD[buildType].map, draft);
+  }
+  function renderBuilder(resetPreview) {
+    const cfg = BUILD[buildType];
+    $("segHouse").setAttribute("aria-pressed", buildType === "house");
+    $("segRoom").setAttribute("aria-pressed", buildType === "room");
+    $("cuSlots").innerHTML = "";
+    cfg.keys.forEach(k => {
+      const row = document.createElement("div"); row.className = "slot";
+      const input = document.createElement("input");
+      input.type = "color"; input.value = draft[k].toLowerCase();
+      input.setAttribute("aria-label", cfg.labels[k] + " color");
+      const info = document.createElement("div"); info.className = "slot-info";
+      const nm = document.createElement("b"); nm.textContent = cfg.labels[k];
+      const code = document.createElement("code"); code.textContent = draft[k];
+      info.append(nm, code);
+      const use = document.createElement("button");
+      use.className = "btn small"; use.textContent = "Use picker color";
+      input.oninput = () => { draft[k] = input.value.toUpperCase(); code.textContent = draft[k]; updatePreview(); };
+      use.onclick = () => {
+        draft[k] = toHex(hslToRgb(h, s, l));
+        input.value = draft[k].toLowerCase(); code.textContent = draft[k]; updatePreview();
+      };
+      row.append(input, info, use);
+      $("cuSlots").appendChild(row);
+    });
+    if (resetPreview) { $("cuPreview").innerHTML = ""; $("cuPreview").appendChild(makePreviewSvg()); }
+    updatePreview();
+  }
+
+  $("segHouse").onclick = () => { buildType = "house"; startDraft(); renderBuilder(true); };
+  $("segRoom").onclick = () => { buildType = "room"; startDraft(); renderBuilder(true); };
+  $("cuReset").onclick = () => { startDraft(); renderBuilder(false); toast("Colors reset"); };
+
+  $("cuSave").onclick = () => {
+    const cfg = BUILD[buildType];
+    if (customCombos[buildType].length >= 20) return toast("Limit reached. Delete a preset first.");
+    const n = customCombos[buildType].length + 1;
+    const name = $("cuName").value.trim().slice(0, 40) || (buildType === "house" ? "My house combo " : "My room combo ") + n;
+    const combo = { id: Date.now(), name, note: "Custom preset" };
+    cfg.keys.forEach(k => combo[k] = draft[k]);
+    customCombos[buildType].push(combo); persistCustom();
+    cfg.list.push({ ...combo, custom: true });
+    if (buildType === "house") { activeCombo = cfg.list.length - 1; buildHouseList(); paintHouse(); popSvg($("houseSvg")); }
+    else { activeRoom = cfg.list.length - 1; buildRoomList(); paintRoom(); popSvg($("roomSvg")); }
+    $("cuName").value = "";
+    toast("Preset saved");
+    $(cfg.svg).scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  function deleteCustom(type) {
+    const isHouse = type === "house";
+    const arr = isHouse ? HOUSE_COMBOS : ROOM_COMBOS;
+    const idx = isHouse ? activeCombo : activeRoom;
+    const c = arr[idx];
+    if (!c || !c.custom) return;
+    const ci = customCombos[type].findIndex(x => x.id === c.id);
+    if (ci > -1) customCombos[type].splice(ci, 1);
+    arr.splice(idx, 1);
+    if (isHouse) { activeCombo = 0; buildHouseList(); paintHouse(); }
+    else { activeRoom = 0; buildRoomList(); paintRoom(); }
+    persistCustom(); toast("Preset deleted");
+  }
+  $("delHouse").onclick = () => deleteCustom("house");
+  $("delRoom").onclick = () => deleteCustom("room");
+
+  // ---------- Settings ----------
+  const rootEl = document.documentElement;
+  function syncSwitches() {
+    $("swDark").setAttribute("aria-checked", rootEl.dataset.theme === "dark");
+    $("swMotion").setAttribute("aria-checked", rootEl.dataset.motion !== "off");
+  }
+  $("swDark").onclick = () => {
+    const dark = rootEl.dataset.theme !== "dark";
+    rootEl.dataset.theme = dark ? "dark" : "light";
+    try { localStorage.setItem("cp-theme", rootEl.dataset.theme); } catch (e) {}
+    syncSwitches();
+  };
+  $("swMotion").onclick = () => {
+    const turnOff = rootEl.dataset.motion !== "off";
+    if (turnOff) rootEl.dataset.motion = "off"; else delete rootEl.dataset.motion;
+    try { localStorage.setItem("cp-motion", turnOff ? "off" : "on"); } catch (e) {}
+    syncSwitches();
+  };
+  $("gear").onclick = e => {
+    e.stopPropagation();
+    const open = $("panel").hidden;
+    $("panel").hidden = !open;
+    $("gear").setAttribute("aria-expanded", open);
+  };
+  document.addEventListener("click", e => {
+    if (!$("panel").hidden && !e.target.closest(".settings")) { $("panel").hidden = true; $("gear").setAttribute("aria-expanded", false); }
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && !$("panel").hidden) { $("panel").hidden = true; $("gear").setAttribute("aria-expanded", false); $("gear").focus(); }
+  });
+  $("clearSaved").onclick = () => {
+    if (!savedColors.length) return toast("No saved colors");
+    savedColors = []; persist(); render(); toast("Saved colors cleared");
+  };
+  $("clearCustom").onclick = () => {
+    if (!customCombos.house.length && !customCombos.room.length) return toast("No custom presets yet");
+    if (!confirm("Delete all your custom presets?")) return;
+    [HOUSE_COMBOS, ROOM_COMBOS].forEach(arr => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i].custom) arr.splice(i, 1); });
+    customCombos = { house: [], room: [] }; persistCustom();
+    activeCombo = 0; activeRoom = 0;
+    buildHouseList(); buildRoomList(); paintHouse(); paintRoom();
+    startDraft(); renderBuilder(false);
+    toast("Custom presets deleted");
+  };
+
+  buildHouseList();
+  buildRoomList();
+  startDraft();
+  renderBuilder(true);
+  syncSwitches();
+
+  // scroll reveal for the lower sections and combo cards
+  document.querySelectorAll(".combo").forEach((el, i) => { el.classList.add("rv"); el.style.setProperty("--d", (i % 10) * 55 + "ms"); });
+  document.querySelectorAll(".bottom, .houses").forEach(el => el.classList.add("rv"));
+  const revealEls = document.querySelectorAll(".rv");
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver(entries => entries.forEach(en => {
+      if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+    }), { threshold: .12 });
+    revealEls.forEach(el => io.observe(el));
+  } else {
+    revealEls.forEach(el => el.classList.add("in"));
+  }
+
+  paintRoom();
+  paintHouse();
+  render();
+</script>
+</body>
+</html>
